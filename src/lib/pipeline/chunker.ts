@@ -18,48 +18,38 @@ export function chunkText(input: string): Chunk[] {
 
   const chunks: Chunk[] = [];
   let sentenceIdx = 0;
-  let charOffset = 0;
   let chunkSeq = 0;
 
   while (sentenceIdx < sentences.length) {
+    const startIdx = sentenceIdx;
     const buffer: string[] = [];
     let tokenCount = 0;
-    const startOffset = charOffset;
 
-    // Fill chunk to target size
+    // Fill chunk up to target token size
     while (sentenceIdx < sentences.length && tokenCount < TARGET_CHUNK_TOKENS) {
       const sentence = sentences[sentenceIdx];
-      if (!sentence) break;
+      if (!sentence) { sentenceIdx++; continue; }
       buffer.push(sentence);
       tokenCount += estimateTokens(sentence);
-      charOffset += sentence.length + 1;
       sentenceIdx++;
     }
 
-    const chunkText = buffer.join(" ");
-    const chunkId = `chunk_${String(chunkSeq).padStart(2, "0")}`;
+    if (buffer.length === 0) break;
 
+    const text = buffer.join(" ");
     chunks.push({
-      id: chunkId,
-      text: chunkText,
-      start: startOffset,
-      end: startOffset + chunkText.length,
+      id: `chunk_${String(chunkSeq).padStart(2, "0")}`,
+      text,
+      start: startIdx,
+      end: sentenceIdx - 1,
       tokenEstimate: tokenCount,
     });
-
     chunkSeq++;
 
-    // Overlap: step back by ~20% of sentences
-    const overlapCount = Math.max(1, Math.floor(buffer.length * OVERLAP_RATIO));
-    const stepBack = buffer.length - overlapCount;
-    sentenceIdx = Math.max(0, sentenceIdx - overlapCount);
-
-    // Recalculate charOffset for overlap position
-    charOffset = startOffset;
-    for (let i = 0; i < stepBack && i < buffer.length; i++) {
-      const s = buffer[i];
-      if (s) charOffset += s.length + 1;
-    }
+    // Overlap: step back ~20% of sentences consumed.
+    // Always advance at least 1 past startIdx to guarantee forward progress.
+    const overlapCount = Math.floor(buffer.length * OVERLAP_RATIO);
+    sentenceIdx = Math.max(startIdx + 1, sentenceIdx - overlapCount);
   }
 
   return chunks;

@@ -21,13 +21,15 @@ function formatTs(ts: number): string {
 export function PipelineConsole() {
   const logs = usePipelineStore((s) => s.logs);
   const runStatus = usePipelineStore((s) => s.runStatus);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Collect all log lines in stage order
   const allLines: LogLine[] = STAGE_ORDER.flatMap((id) => logs[id] ?? []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [allLines.length]);
 
   const isEmpty = allLines.length === 0;
@@ -45,7 +47,7 @@ export function PipelineConsole() {
       </div>
 
       {/* Log output */}
-      <div className="h-48 overflow-y-auto p-3 font-mono text-xs">
+      <div ref={scrollRef} className="h-48 overflow-y-auto p-3 font-mono text-xs">
         {isEmpty ? (
           <div className="flex items-center gap-1.5 text-[var(--text-disabled)]">
             <span className="text-[var(--text-tertiary)]">$</span>
@@ -75,7 +77,7 @@ export function PipelineConsole() {
             ))}
           </AnimatePresence>
         )}
-        <div ref={bottomRef} />
+        <div ref={bottomRef} aria-hidden />
       </div>
     </div>
   );

@@ -25,6 +25,7 @@ export function PipelineInput() {
 
   const handleSample = () => {
     setInputText(SAMPLE_TEXT);
+    void startPipeline(SAMPLE_TEXT);
   };
 
   return (
