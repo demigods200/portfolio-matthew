@@ -2,6 +2,7 @@ export interface IterationStep {
   version: string;
   label: string;
   prompt: string;
+  language?: string;
   outcome: string;
   outcomeType: "failure" | "partial" | "success";
 }
@@ -16,69 +17,183 @@ export interface PromptStory {
 
 export const PROMPT_STORIES: PromptStory[] = [
   {
-    id: "llm-validation",
-    title: "LLM Output Validation",
+    id: "eval-infrastructure",
+    title: "Eval-Driven Quality Gates",
     context:
-      "GPT-4 summarizing Loom video transcripts. Needed reliable JSON output to store in PostgreSQL and serve the UI. Freeform responses were breaking the parser ~15% of the time.",
+      "Loom AI summaries were structurally valid (Zod passed) but semantically wrong 10–15% of the time — wrong speaker, missed action items, hallucinated topics. No prompt tweak could surface this. Needed an automated eval layer that ran in CI and in production, with a signal I could act on before users filed bugs.",
     steps: [
       {
         version: "v1",
-        label: "Naive prompt",
-        prompt: `Summarize this video transcript. Return a JSON with title, summary, and key_points.
+        label: "Manual spot-check",
+        prompt: `# v1: Manual review posted to Slack on each deploy
+# Eng team reviewed ~20 random summaries — no criteria, no tracking
 
-Transcript:
-{transcript}`,
+sample = random.sample(recent_summaries, 20)
+for s in sample:
+    post_to_slack(f"[REVIEW] {s.video_id}: {s.summary}")
+
+# No structured rubric. Reviewed on good days, skipped on bad ones.
+# No CI gate — nothing blocked a bad deploy.`,
         outcome:
-          "GPT-4 returned markdown prose, code fences, and inconsistent keys. Parser failed ~15% of calls.",
+          "Caught 0 regressions in 3 months. A model version change silently degraded quality by ~12%. Found out from user complaints, not monitoring.",
         outcomeType: "failure",
       },
       {
         version: "v2",
-        label: "Schema hint",
-        prompt: `Summarize this video transcript. You MUST respond with valid JSON only.
-Format:
-{ "title": "string", "summary": "string", "key_points": ["string"] }
+        label: "LLM-as-judge (single dimension)",
+        prompt: `# v2: GPT-4o scores each summary on factual accuracy
 
-Transcript:
-{transcript}`,
+JUDGE_PROMPT = """Given a transcript and AI summary, score
+factual accuracy 0–1.
+Respond with JSON: {"score": float, "reason": "string"}
+Transcript: {transcript}
+Summary: {summary}"""
+
+async def eval_summary(transcript: str, summary: str) -> float:
+    result = await openai.chat.completions.create(
+        model="gpt-4o",
+        response_format={"type": "json_object"},
+        messages=[{"role": "user", "content": JUDGE_PROMPT.format(
+            transcript=transcript, summary=summary
+        )}]
+    )
+    return json.loads(result.choices[0].message.content)["score"]`,
         outcome:
-          "Parse rate improved to ~88%. Still failed on long transcripts where the model lost track of the format constraint.",
+          "~78% correlation with human judgment. But a single accuracy score collapsed three distinct failure modes — hallucination, missed topics, wrong speaker. Couldn't diagnose which was regressing.",
         outcomeType: "partial",
       },
       {
         version: "v3",
-        label: "Strict schema + few-shot",
-        prompt: `You are a transcript analysis API. Respond ONLY with a JSON object matching this exact schema. No prose, no markdown, no code fences.
+        label: "Multi-dimensional suite + CI gate",
+        prompt: `# v3: Separate eval dimensions + CI gate + production sampling
 
-Schema:
-{
-  "title": "string (max 80 chars)",
-  "summary": "string (2-3 sentences)",
-  "key_points": ["string (max 5 items)"],
-  "confidence": "number (0-1)"
-}
+EVAL_DIMENSIONS = ["factual_accuracy", "topic_coverage", "speaker_attribution"]
 
-Example input: "Today we covered our Q3 roadmap..."
-Example output: {"title":"Q3 Roadmap Review","summary":"Team reviewed Q3 priorities focusing on AI features and search improvements.","key_points":["AI summarization launch","Hybrid search rollout","Performance targets"],"confidence":0.95}
+async def run_eval_suite(transcript: str, summary: str) -> EvalResult:
+    scores = {}
+    for dim in EVAL_DIMENSIONS:
+        scores[dim] = await llm_judge(transcript, summary, dimension=dim)
+    aggregate = (scores["factual_accuracy"] * 0.5 +
+                 scores["topic_coverage"]   * 0.3 +
+                 scores["speaker_attribution"] * 0.2)
+    return EvalResult(scores=scores, aggregate=aggregate)
 
-Transcript:
-{transcript}`,
+async def ci_eval_gate() -> bool:
+    results = await asyncio.gather(*[
+        run_eval_suite(ex.transcript, await generate_summary(ex.transcript))
+        for ex in GOLDEN_DATASET  # 150 human-verified examples
+    ])
+    pass_rate = sum(1 for r in results if r.aggregate >= 0.82) / len(results)
+    if pass_rate < 0.90:
+        raise CIFailure(f"Eval gate failed: {pass_rate:.1%} (threshold: 90%)")
+    return True
+
+# Production: sample 5% of live traffic → scores streamed to Datadog`,
         outcome:
-          "Parse rate: 99.8% over 30 days in production. Added Zod schema validation as a safety net — caught 0.2% edge cases.",
+          "Caught a GPT-4o mini regression (factual_accuracy: 0.91 → 0.76) before reaching >1% of users. CI gate blocked the deploy. Fixed with chain-of-thought in summarization — aggregate returned to 0.93.",
         outcomeType: "success",
       },
     ],
-    result: "99.8% parse rate · Zero silent failures in 30 days production",
+    result: "Eval suite catches regressions before users do · CI gate blocked 2 bad deploys · 150-example golden dataset",
   },
   {
-    id: "hybrid-ranking",
-    title: "Hybrid Search Ranking",
+    id: "model-routing",
+    title: "Model Routing by Complexity",
     context:
-      "Loom search combined pgvector (semantic) and ElasticSearch (BM25 keyword). Early fusion formula produced mediocre relevance — semantic results dominated and buried exact-match results.",
+      "Loom's summarization ran every LLM call through GPT-4o regardless of video length or content. A 90-second standup and a 45-minute design review got the same model, same cost. At scale, ~60% of videos were under 5 minutes and needed only extractive summarization — no reasoning required. The goal: route by task complexity, cutting cost without degrading quality on complex inputs.",
     steps: [
       {
         version: "v1",
-        label: "Simple average",
+        label: "Token-count threshold",
+        language: "typescript",
+        prompt: `// v1: Simple token-count threshold
+// Assumption: longer transcript = more complex task
+
+const MODEL_THRESHOLD = 2000; // tokens
+
+function selectModel(transcriptTokens: number): string {
+  return transcriptTokens > MODEL_THRESHOLD
+    ? "gpt-4o"
+    : "gpt-4o-mini";
+}
+
+// Problem: a 500-token heated technical debate is more complex
+// than a 3000-token scripted product demo.
+// Token count is a length signal, not a complexity signal.`,
+        outcome:
+          "Cost dropped 38% but quality on short technical videos degraded. A 400-token architecture discussion got routed to mini and produced shallow summaries.",
+        outcomeType: "failure",
+      },
+      {
+        version: "v2",
+        label: "Vocabulary heuristics",
+        language: "typescript",
+        prompt: `// v2: Complexity score from transcript features
+
+async function classifyComplexity(t: string): Promise<"simple" | "complex"> {
+  const techTermDensity = countTechnicalTerms(t) / wordCount(t);
+  const speakerTurns    = countSpeakerChanges(t);
+  const questionCount   = (t.match(/\\?/g) || []).length;
+
+  const score =
+    techTermDensity * 0.5 +
+    Math.min(speakerTurns / 10, 1) * 0.3 +
+    Math.min(questionCount / 5, 1) * 0.2;
+
+  return score > 0.4 ? "complex" : "simple";
+}`,
+        outcome:
+          "Better precision on technical content. Brittle on medical transcripts and non-English vocabulary — confused term-density scoring. Classifier accuracy: ~71% against a human-labeled test set.",
+        outcomeType: "partial",
+      },
+      {
+        version: "v3",
+        label: "LLM router + cascade fallback",
+        language: "typescript",
+        prompt: `// v3: Fast router on excerpt + quality-gated cascade
+
+const ROUTER_SYSTEM = \`Classify video transcript complexity.
+simple: factual updates, demos, single topic
+complex: technical design, multi-party debate, specialized domain
+JSON only: {"complexity": "simple"|"complex", "confidence": number}\`;
+
+async function routedSummarize(transcript: string): Promise<SummaryResult> {
+  // Stage 1: Cheap router on first ~500 tokens
+  const routing = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [{ role: "system", content: ROUTER_SYSTEM },
+               { role: "user",   content: transcript.slice(0, 2000) }],
+  });
+  const { complexity } = JSON.parse(routing.choices[0].message.content!);
+
+  // Stage 2: Generate with routed model
+  const model = complexity === "complex" ? "gpt-4o" : "gpt-4o-mini";
+  const summary = await generateSummary(transcript, model);
+
+  // Stage 3: Quality gate — cascade to gpt-4o if mini scores low
+  if (model === "gpt-4o-mini") {
+    const score = await quickEval(transcript, summary.text);
+    if (score < 0.78) return generateSummary(transcript, "gpt-4o");
+  }
+  return summary;
+}`,
+        outcome:
+          "67% of requests served by gpt-4o-mini. Cascade triggered on 8% of mini calls. Quality parity with gpt-4o-only baseline (eval aggregate: 0.91 vs 0.92). Cost reduction: 51%.",
+        outcomeType: "success",
+      },
+    ],
+    result: "51% LLM cost reduction · Quality parity on eval suite · 67% of requests served by smaller model",
+  },
+  {
+    id: "hybrid-ranking",
+    title: "Hybrid Retrieval Architecture",
+    context:
+      "Loom search combined pgvector (semantic) and ElasticSearch (BM25 keyword) retrieval. The naive fusion formula produced mediocre relevance — semantic embeddings dominated and buried exact-match results. This is the core tradeoff in hybrid retrieval: semantic search finds conceptually related content, keyword search finds exactly what the user typed. The fusion layer is where retrieval quality is won or lost.",
+    steps: [
+      {
+        version: "v1",
+        label: "Naive score fusion",
         prompt: `# Fusion formula
 score = (semantic_score + bm25_score) / 2
 
@@ -91,7 +206,7 @@ BM25 scores dominate. Semantic results buried.`,
       },
       {
         version: "v2",
-        label: "Normalized + weighted",
+        label: "Min-max normalization",
         prompt: `# Normalize both to [0, 1], apply weights
 semantic_norm = cosine_sim  # already [0, 1]
 bm25_norm = bm25_score / max_bm25_score  # normalize by observed max
@@ -123,89 +238,6 @@ return sorted(scores.items(), key=lambda x: -x[1])`,
         outcomeType: "success",
       },
     ],
-    result: "Measurable relevance gain · No per-query tuning · Deployed to all Loom search",
-  },
-  {
-    id: "streaming-latency",
-    title: "Streaming Latency Reduction",
-    context:
-      "LLM streaming responses had 1.2s average TTFB (time to first byte). Users perceived this as the app being slow even though tokens arrived quickly after. Target: <500ms.",
-    steps: [
-      {
-        version: "v1",
-        label: "Cold call on every request",
-        prompt: `# Every request hit OpenAI cold
-async def stream_summary(transcript: str):
-    response = await openai.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": build_prompt(transcript)}],
-        stream=True
-    )
-    async for chunk in response:
-        yield chunk.choices[0].delta.content`,
-        outcome:
-          "TTFB: 1.1–1.4s. OpenAI cold-start latency dominated. Repeated requests for same video hit the model every time.",
-        outcomeType: "failure",
-      },
-      {
-        version: "v2",
-        label: "Redis response cache",
-        prompt: `# Cache full responses — miss still hits OpenAI cold
-CACHE_TTL = 3600  # 1 hour
-
-async def stream_summary(transcript: str):
-    cache_key = f"summary:{hash(transcript)}"
-    cached = await redis.get(cache_key)
-
-    if cached:
-        yield cached  # instant — but not streaming
-        return
-
-    # Cache miss: still 1.2s TTFB
-    full_response = ""
-    async for chunk in openai_stream(transcript):
-        full_response += chunk
-        yield chunk
-
-    await redis.set(cache_key, full_response, ex=CACHE_TTL)`,
-        outcome:
-          "Cache hits: instant. Cache misses: still 1.2s. ~40% cache hit rate meant 60% of users still saw slow TTFB.",
-        outcomeType: "partial",
-      },
-      {
-        version: "v3",
-        label: "Pre-warm + async background generation",
-        prompt: `# On video upload: trigger background generation immediately
-# User always gets a warm stream
-
-@on_video_uploaded
-async def pre_warm_summary(video_id: str, transcript: str):
-    cache_key = f"summary:{hash(transcript)}"
-
-    # Generate and cache before user requests it
-    full = await openai_generate(transcript)
-    await redis.set(cache_key, full, ex=7200)
-
-# At request time: cache is always warm
-async def stream_summary(transcript: str):
-    cache_key = f"summary:{hash(transcript)}"
-    cached = await redis.get(cache_key)
-
-    if cached:
-        # Stream from cache — simulates token-by-token for UX
-        for token in cached.split():
-            yield token + " "
-            await asyncio.sleep(0.015)  # ~67 tokens/sec
-        return
-
-    # Fallback: real-time (rare)
-    async for chunk in openai_stream(transcript):
-        yield chunk`,
-        outcome:
-          "TTFB: <80ms (cache hit). Effective TTFB: <500ms including network. Cache hit rate: 94%.",
-        outcomeType: "success",
-      },
-    ],
-    result: "<500ms TTFB · 94% cache hit rate · Reduced OpenAI spend by ~40%",
+    result: "Measurable NDCG improvement vs. both baselines · Scale-invariant — no per-query tuning · Deployed across all Loom search",
   },
 ];

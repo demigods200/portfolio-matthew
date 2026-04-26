@@ -12,10 +12,11 @@ export function SystemDesign() {
               The Loom AI Pipeline
             </h2>
             <p className="text-base text-[var(--text-secondary)] max-w-2xl">
-              Architecture of the production AI system I built at Loom — video
-              upload through async SQS processing, Whisper transcription, LLM
-              summarization with Redis caching, and pgvector + ElasticSearch
-              hybrid search. Hover any node for implementation detail.
+              Architecture of the production AI system I built at Loom —
+              SQS-backed async processing, complexity-routed LLM calls
+              (gpt-4o / gpt-4o-mini cascade), inline eval scoring for quality
+              gates, and pgvector + ElasticSearch hybrid retrieval. Hover any
+              node for implementation detail.
             </p>
           </div>
         </ScrollReveal>
@@ -30,9 +31,9 @@ export function SystemDesign() {
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { label: "Async decoupling", detail: "SQS queue absorbs upload spikes" },
-              { label: "LLM caching", detail: "Redis deduplicates inference calls" },
-              { label: "Hybrid search", detail: "pgvector + BM25 via RRF fusion" },
-              { label: "SSE streaming", detail: "<500ms time-to-first-byte" },
+              { label: "Model routing",   detail: "Complexity-aware gpt-4o / gpt-4o-mini cascade" },
+              { label: "Hybrid search",   detail: "pgvector + BM25 via RRF fusion" },
+              { label: "Eval gates",      detail: "CI blocks deploys on quality regression" },
             ].map((item) => (
               <div
                 key={item.label}

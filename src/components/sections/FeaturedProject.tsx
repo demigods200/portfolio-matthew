@@ -9,12 +9,13 @@ export function FeaturedProject() {
           <div className="flex flex-col gap-3 mb-8">
             <span className="section-label">Featured Project</span>
             <h2 className="text-3xl font-semibold text-[var(--text-primary)]">
-              Document Intelligence Pipeline
+              Agentic Document Processing
             </h2>
             <p className="text-base text-[var(--text-secondary)] max-w-2xl">
-              A real-time simulation of the AI pipeline I built at Loom — video
-              transcript → chunk → embed → semantic index → query. Paste any text
-              and watch it process live over SSE.
+              A live simulation of the document processing agent I built at Loom
+              — multi-step tool-use loop with per-stage structured output
+              validation. Paste any text: watch it route through transcription,
+              chunking, embedding, and retrieval in real time over SSE.
             </p>
           </div>
         </ScrollReveal>

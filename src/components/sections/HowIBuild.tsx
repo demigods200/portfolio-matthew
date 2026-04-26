@@ -27,13 +27,14 @@ export function HowIBuild() {
           <div className="flex flex-col gap-3 mb-10">
             <span className="section-label">How I Build with AI</span>
             <h2 className="text-3xl font-semibold text-[var(--text-primary)]">
-              Prompt Engineering as System Design
+              Engineering AI Systems That Stay Correct
             </h2>
             <p className="text-base text-[var(--text-secondary)] max-w-2xl">
-              Iterating on prompts is the same discipline as iterating on system
-              architecture. Each version has a hypothesis, a failure mode, and a
-              measurable outcome. These are three real examples from production
-              at Loom.
+              Shipping an AI feature is the easy part. Keeping it correct at
+              scale — across model updates, edge cases, and traffic spikes — is
+              the engineering challenge. These are three production problems from
+              Loom, each requiring a different layer of the stack: eval
+              infrastructure, model routing, and retrieval architecture.
             </p>
           </div>
         </ScrollReveal>
@@ -97,7 +98,7 @@ export function HowIBuild() {
                     {/* Prompt */}
                     <CodeBlock
                       code={step.prompt}
-                      language="python"
+                      language={step.language ?? "python"}
                       className="rounded-none border-0 border-b border-[var(--border-subtle)]"
                     />
 

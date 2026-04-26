@@ -109,8 +109,8 @@ export function Hero() {
         >
           Senior engineer at{" "}
           <span className="text-[var(--text-primary)]">Atlassian (Loom)</span>{" "}
-          — building LLM pipelines, hybrid search, and real-time AI experiences
-          at scale.
+          — building eval infrastructure, agentic systems, and model routing at
+          scale.
         </motion.p>
 
         {/* CTAs */}
@@ -138,15 +138,8 @@ export function Hero() {
           <GlowBorder>
             <div className="grid grid-cols-3 divide-x divide-[var(--border-subtle)]">
               <AnimatedMetric value={8} suffix="+" label="Years shipping product" delay={900} />
-              <AnimatedMetric value={3} label="AI pipelines in production" delay={1000} />
-              <div className="flex flex-col items-center gap-1 px-3 sm:px-6 py-4">
-                <span className="font-mono text-xl sm:text-2xl font-semibold text-[var(--text-primary)]">
-                  &lt;500ms
-                </span>
-                <span className="text-xs text-[var(--text-tertiary)] text-center leading-tight">
-                  Streaming start latency
-                </span>
-              </div>
+              <AnimatedMetric value={3} label="AI systems in production" delay={1000} />
+              <AnimatedMetric value={90} suffix="%+" label="Eval suite pass rate" delay={1100} />
             </div>
           </GlowBorder>
         </motion.div>
