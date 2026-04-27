@@ -32,13 +32,13 @@ export const EXPERIMENTS: Project[] = [
     impact: "Caught 2 model regressions before reaching users · 150-example golden dataset",
   },
   {
-    id: "agent-harness",
-    title: "Agentic Document Processing",
+    id: "video-intelligence-worker",
+    title: "Video Intelligence Worker",
     company: "Atlassian (Loom)",
     description:
-      "Multi-step agent system for video content intelligence: tool-use loop with circuit breakers, per-step timeouts, and structured retry logic. Orchestrates transcription, topic extraction, action item detection, and cross-video entity linking. Each step validates output via Zod before proceeding.",
-    stack: ["OpenAI function calling", "TypeScript", "SQS", "Redis", "PostgreSQL", "Zod"],
+      "Resilient multi-step processing system for video content intelligence: orchestrates Whisper transcription, topic extraction, action item detection, and cross-video entity linking through a structured pipeline with circuit breakers, per-step timeouts, and exponential-backoff retry logic. Each stage validates output via Zod before proceeding.",
+    stack: ["TypeScript", "SQS", "Redis", "PostgreSQL", "Zod", "Node.js"],
     status: "production",
-    impact: "Handles 10-step agent loops with <0.5% unrecoverable failure rate",
+    impact: "Multi-step processing with <0.5% unrecoverable failure rate",
   },
 ];

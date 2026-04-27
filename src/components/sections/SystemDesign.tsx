@@ -13,10 +13,11 @@ export function SystemDesign() {
             </h2>
             <p className="text-base text-[var(--text-secondary)] max-w-2xl">
               Architecture of the production AI system I built at Loom —
-              SQS-backed async processing, complexity-routed LLM calls
-              (gpt-4o / gpt-4o-mini cascade), inline eval scoring for quality
-              gates, and pgvector + ElasticSearch hybrid retrieval. Hover any
-              node for implementation detail.
+              self-hosted Whisper upstream for transcription, async job queue
+              decoupling, text-only OpenAI GPT for structured analysis
+              (title, summary, chapters, action items), and Braintrust eval
+              gates in CI and production. Hover any node for implementation
+              detail.
             </p>
           </div>
         </ScrollReveal>
@@ -30,10 +31,10 @@ export function SystemDesign() {
         <ScrollReveal delay={160}>
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Async decoupling", detail: "SQS queue absorbs upload spikes" },
-              { label: "Model routing",   detail: "Complexity-aware gpt-4o / gpt-4o-mini cascade" },
-              { label: "Hybrid search",   detail: "pgvector + BM25 via RRF fusion" },
-              { label: "Eval gates",      detail: "CI blocks deploys on quality regression" },
+              { label: "Upstream transcription", detail: "Self-hosted Whisper runs at upload time — before any LLM call" },
+              { label: "Text-only LLM",          detail: "OpenAI GPT receives transcript text, never audio or video" },
+              { label: "Async decoupling",       detail: "Job queue separates transcription from AI analysis" },
+              { label: "Eval gates",             detail: "Braintrust CI gate blocks deploys on quality regression" },
             ].map((item) => (
               <div
                 key={item.label}
